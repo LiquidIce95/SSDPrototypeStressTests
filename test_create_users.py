@@ -1,9 +1,41 @@
 import unittest
 import psycopg2
+import subprocess
+import os
+from time import sleep
 from functions import *
 
 PythonUrl = "http://localhost:5000/"
 JavaUrl = "http://localhost:8080/"
+BACKUP_FILE = "db_backup.sql"
+DB_CONTAINER_NAME = "ssdprototypepostgresdb-db-1"
+
+def perform_backup(self):
+      # Path to the backup file inside the Docker container
+      backup_file_path = f"/backups/{BACKUP_FILE}"
+
+      # Ensure the backups directory exists
+      subprocess.run(["docker", "exec", DB_CONTAINER_NAME, "mkdir", "-p", "/backups"])
+
+      # Command to create a backup of the database inside the Docker container
+      command = [
+          "docker", "exec", DB_CONTAINER_NAME, "pg_dump",
+          "--dbname=postgresql://myuser:mypassword@localhost:5432/mydatabase",
+          "--file", backup_file_path
+      ]
+
+      # Execute the pg_dump command
+      result = subprocess.run(command, capture_output=True, text=True)
+
+      # Check if the command was successful
+      self.assertEqual(result.returncode, 0, f"pg_dump failed: {result.stderr}")
+
+      # Copy the backup file from the Docker container to the host
+      subprocess.run(["docker", "cp", f"{DB_CONTAINER_NAME}:{backup_file_path}", BACKUP_FILE])
+
+      self.assertTrue(os.path.exists(BACKUP_FILE), "Backup file was not created")
+
+
 
 class TestCreateUsers(unittest.TestCase):
 
@@ -77,15 +109,7 @@ class TestCreateUsers(unittest.TestCase):
         # Execute the function to create and delete users
         create_and_delete_users_overlap(JavaUrl, PythonUrl)
 
-        self.cursor.execute("SELECT username FROM app_user WHERE username LIKE 'userPython%' OR username LIKE 'userJava%'")
-        # users = self.cursor.fetchall()
-        # users = [user[0] for user in users]
-
-        # for i in range(10, 1001, 10):
-        #     self.assertNotIn(f"userPython{i-9}", users)
-        #     self.assertNotIn(f"userJava{i-9}", users)
-
-        # Verify the total number of users
+        self.cursor.execute("SELECT username FROM app_user WHERE username LIKE 'userPython%' OR username LIKE 'userJava%'")       
         self.cursor.execute("SELECT COUNT(*) FROM app_user")
         count = self.cursor.fetchone()[0]
         self.assertEqual(count, 1900, "The number of users in the database is incorrect after deletions.")
@@ -96,17 +120,57 @@ class TestCreateUsers(unittest.TestCase):
         create_and_delete_users_distinct(JavaUrl, PythonUrl)
 
         self.cursor.execute("SELECT username FROM app_user WHERE username LIKE 'userPython%' OR username LIKE 'userJava%'")
-        # users = self.cursor.fetchall()
-        # users = [user[0] for user in users]
-
-        # for i in range(10, 1001, 10):
-        #     self.assertNotIn(f"userPython{i-7}", users)
-        #     self.assertNotIn(f"userJava{i-3}", users)
-
         # Verify the total number of users
         self.cursor.execute("SELECT COUNT(*) FROM app_user")
         count = self.cursor.fetchone()[0]
         self.assertEqual(count, 1800, "The number of users in the database is incorrect after deletions.")
+
+    def test_backup_database(self):
+        # Function to perform the backup
+                    # Verify the backup file was created on the host
+        self.assertTrue(os.path.exists(BACKUP_FILE), "Backup file was not created")
+
+               # Start the user creation and deletion in parallel
+        user_creation_thread = threading.Thread(target=create_and_delete_users_overlap, args=(JavaUrl, PythonUrl))
+        user_creation_thread.start()
+
+        # Wait for 5 seconds before starting the backup
+        sleep(5)
+
+        # Perform the backup
+        perform_backup(self)
+
+        # Ensure the user creation and deletion thread completes
+        user_creation_thread.join()
+        # Verify the total number of users
+        self.cursor.execute("SELECT COUNT(*) FROM app_user")
+        count = self.cursor.fetchone()[0]
+
+
+        self.assertEqual(count, 1900, "The number of users in the database is incorrect after deletions.")
+
+
+    def test_backup_database2(self):
+        # Start the user creation and deletion in parallel
+
+        user_creation_thread = threading.Thread(target=create_and_delete_users_overlap, args=(JavaUrl, PythonUrl))
+        user_creation_thread.start()
+
+        # Wait for 5 seconds before starting the backup
+        sleep(10)
+
+        # Perform the backup
+        perform_backup(self)
+
+        # Ensure the user creation and deletion thread completes
+        user_creation_thread.join()
+        # Verify the total number of users
+        self.cursor.execute("SELECT COUNT(*) FROM app_user")
+        count = self.cursor.fetchone()[0]
+
+
+        self.assertEqual(count, 1900, "The number of users in the database is incorrect after deletions.")
+
 
 
 if __name__ == '__main__':
