@@ -147,8 +147,7 @@ class TestCreateUsers(unittest.TestCase):
         user_creation_thread = threading.Thread(target=create_and_delete_users_parallel, args=(JavaUrl, PythonUrl,3,7))
         user_creation_thread.start()
 
-        # Wait for 5 seconds before starting the backup
-        sleep(5)
+        sleep(3)
 
         # Perform the backup
         perform_backup(self)
@@ -169,7 +168,7 @@ class TestCreateUsers(unittest.TestCase):
         user_creation_thread = threading.Thread(target=create_and_delete_users_parallel, args=(JavaUrl, PythonUrl,8,8))
         user_creation_thread.start()
 
-        sleep(10)
+        sleep(5)
 
         # Perform the backup
         perform_backup(self)
